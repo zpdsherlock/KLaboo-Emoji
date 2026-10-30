@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>KLaboo Emoji</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">KLaboo <b>Emoji</b></div>
+    <label class="field">名称 <input id="packName" type="text" maxlength="40" spellcheck="false"></label>
+    <label class="field">画布
+      <select id="canvasSize">
+        <option value="240">240 px</option>
+        <option value="280">280 px</option>
+        <option value="320">320 px</option>
+        <option value="360">360 px</option>
+        <option value="400">400 px</option>
+      </select>
+    </label>
+    <div class="sep"></div>
+    <button id="btnNew" title="新建 (Ctrl+N)">新建</button>
+    <button id="btnOpen" title="打开工程 (Ctrl+O)">打开</button>
+    <button id="btnSave" title="保存工程 (Ctrl+S)">保存</button>
+    <div class="sep"></div>
+    <button id="btnUndo" title="撤销 (Ctrl+Z)">撤销</button>
+    <button id="btnRedo" title="重做 (Ctrl+Shift+Z)">重做</button>
+    <div class="grow"></div>
+    <button id="btnImport" title="导入图片 (Ctrl+I)">导入图片</button>
+    <button id="btnPreview" title="表情预览 (Ctrl+P)">表情预览</button>
+    <button id="btnExport" class="primary" title="导出表情包 zip (Ctrl+E)">导出表情包</button>
+  </header>
+
+  <main class="layout">
+    <aside class="tools panel">
+      <div class="tool-grid" id="toolGrid"></div>
+      <h4>样式</h4>
+      <div class="row"><label><input type="checkbox" id="strokeOn" checked> 描边</label><input type="color" id="strokeColor" value="#664500"></div>
+      <div class="row"><label><input type="checkbox" id="fillOn"> 填充</label><input type="color" id="fillColor" value="#ffcc4d"></div>
+      <div class="row col"><span>粗细 <em id="widthVal">10</em></span><input type="range" id="width" min="1" max="60" value="10"></div>
+      <div class="row col"><span>不透明度 <em id="opacityVal">100%</em></span><input type="range" id="opacity" min="5" max="100" value="100"></div>
+      <div class="row col"><span>矩形圆角 <em id="radiusVal">0</em></span><input type="range" id="radius" min="0" max="120" value="0"></div>
+      <div class="row"><label><input type="checkbox" id="penClosed"> 画笔闭合路径</label></div>
+      <h4>色板</h4>
+      <div class="palette" id="palette"></div>
+      <p class="hint">左键 = 描边色，右键 = 填充色</p>
+    </aside>
+
+    <section class="stage">
+      <nav class="slot-tabs" id="slotTabs"></nav>
+      <div class="canvas-wrap" id="canvasWrap">
+        <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="statusbar">
+        <span id="cursorPos">—</span>
+        <span id="toolHint"></span>
+        <div class="grow"></div>
+        <label><input type="checkbox" id="showGuides" checked> 设备可视区</label>
+        <label><input type="checkbox" id="showGrid"> 网格</label>
+      </div>
+    </section>
+
+    <aside class="side panel">
+      <section>
+        <h4>当前表情 <span id="curLabel"></span></h4>
+        <div class="row"><label><input type="checkbox" id="bgOn"> 背景色</label><input type="color" id="bgColor" value="#000000"></div>
+        <div class="row">
+          <select id="templateSel"></select>
+          <button id="btnTemplate">套用</button>
+        </div>
+        <div class="row"><label><input type="checkbox" id="templateAll"> 套用到全部 6 个表情</label></div>
+        <div class="row">
+          <select id="copyTarget"></select>
+          <button id="btnCopyTo">复制过去</button>
+        </div>
+        <div class="row"><button id="btnClear" class="danger wide">清空当前表情</button></div>
+      </section>
+      <section class="layers-sec">
+        <h4>图层 <span class="muted" id="layerCount"></span></h4>
+        <ul class="layers" id="layerList"></ul>
+        <div class="row btns">
+          <button id="btnUp" title="上移一层 (Ctrl+])">上移</button>
+          <button id="btnDown" title="下移一层 (Ctrl+[)">下移</button>
+          <button id="btnDup" title="复制 (Ctrl+D)">复制</button>
+          <button id="btnDel" class="danger" title="删除 (Delete)">删除</button>
+        </div>
+      </section>
+      <section>
+        <h4>设备预览</h4>
+        <div class="mini-device" id="miniDevice" title="点击打开完整预览"></div>
+      </section>
+      <section>
+        <h4>导出检查</h4>
+        <div id="checkList" class="checks"></div>
+      </section>
+    </aside>
+  </main>
+
+  <div class="modal" id="importModal" hidden>
+    <div class="dialog wide-dialog">
+      <h3>图片导入生成表情</h3>
+      <div class="import-body">
+        <div class="import-views">
+          <figure><figcaption>原图</figcaption><div class="imgbox chk" id="impSrcBox"></div></figure>
+          <figure><figcaption>生成的矢量表情</figcaption><div class="imgbox chk" id="impOutBox"></div></figure>
+        </div>
+        <div class="import-ctrls">
+          <div class="row col"><span>采样分辨率 <em id="impResVal"></em></span><input type="range" id="impRes" min="16" max="200" value="64"></div>
+          <div class="row col"><span>颜色数 <em id="impColorsVal"></em></span><input type="range" id="impColors" min="2" max="32" value="8"></div>
+          <div class="row"><label><input type="checkbox" id="impRemoveBg" checked> 去除背景（从边缘取色）</label></div>
+          <div class="row col"><span>背景容差 <em id="impTolVal"></em></span><input type="range" id="impTol" min="2" max="120" value="30"></div>
+          <div class="row col"><span>透明阈值 <em id="impAlphaVal"></em></span><input type="range" id="impAlpha" min="1" max="255" value="128"></div>
+          <div class="row col"><span>占画布比例 <em id="impFitVal"></em></span><input type="range" id="impFit" min="20" max="100" value="90"></div>
+          <div class="row"><select id="impMode">
+            <option value="replace">替换当前表情内容</option>
+            <option value="add">添加为新图层</option>
+          </select></div>
+          <p class="stats" id="impStats"></p>
+          <p class="hint">导出为纯矢量路径（每种颜色一个 &lt;path&gt;），设备 LVGL svg 解码器可直接渲染。分辨率和颜色数越高越精细，文件也越大。</p>
+        </div>
+      </div>
+      <div class="dialog-btns">
+        <button id="impChoose">换一张图片…</button>
+        <div class="grow"></div>
+        <button id="impCancel">取消</button>
+        <button id="impOk" class="primary">插入</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="previewModal" hidden>
+    <div class="dialog wide-dialog">
+      <h3>表情预览 <span class="muted" id="pvName"></span></h3>
+      <div class="preview-body">
+        <div class="device-holder" id="pvDevice"></div>
+        <div class="pv-side">
+          <div class="row">
+            <label><input type="checkbox" id="pvAuto" checked> 自动轮播</label>
+            <select id="pvTheme"><option value="night">夜间主题</option><option value="day">白天主题</option></select>
+          </div>
+          <div class="pv-grid" id="pvGrid"></div>
+          <p class="hint">设备屏幕 410×502，表情按 SVG 原始尺寸居中绘制在表情区（中心 205,217）。浏览器渲染与设备 ThorVG 渲染可能存在细微差异。</p>
+        </div>
+      </div>
+      <div class="dialog-btns">
+        <div class="grow"></div>
+        <button id="pvClose" class="primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="msgModal" hidden>
+    <div class="dialog">
+      <h3 id="msgTitle"></h3>
+      <div id="msgBody" class="msg-body"></div>
+      <div class="dialog-btns"><div class="grow"></div>
+        <button id="msgCancel">取消</button>
+        <button id="msgOk" class="primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <input type="file" id="imageFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml" hidden>
+
+  <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+  <script src="core/constants.js"></script>
+  <script src="core/svgdoc.js"></script>
+  <script src="core/vectorize.js"></script>
+  <script src="core/pack.js"></script>
+  <script src="templates.js"></script>
+  <script src="editor.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

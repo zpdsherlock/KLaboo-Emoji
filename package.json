@@ -1,0 +1,44 @@
+{
+  "name": "klaboo-emoji",
+  "version": "1.0.0",
+  "description": "KLaboo 表情资源制作工具：画笔绘制 / 图片导入 / 预览 / 导出 KLaboo-Server 表情包 zip",
+  "author": "KLabers",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac --arm64 --x64",
+    "dist:win": "electron-builder --win --x64",
+    "dist:all": "electron-builder --mac --win --arm64 --x64"
+  },
+  "build": {
+    "appId": "com.klabers.klaboo-emoji",
+    "productName": "KLaboo Emoji",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "package.json"],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.graphics-design",
+      "identity": null
+    },
+    "dmg": { "writeUpdateInfo": false },
+    "win": { "target": "nsis" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "differentialPackage": false
+    },
+    "linux": { "target": "AppImage" }
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  }
+}
