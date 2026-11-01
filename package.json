@@ -8,6 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/",
+    "verify": "node tools/verify-pack.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac --arm64 --x64",
     "dist:win": "electron-builder --win --x64",

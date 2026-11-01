@@ -27,12 +27,27 @@
 
     get slot() { return this.h.getSlot(); }
     get size() { return this.h.getSize(); }
-    /* canvas units per screen pixel */
-    get k() { return this.size / (this.svg.getBoundingClientRect().width || this.size); }
+    /* canvas units per screen pixel; the square viewBox is drawn with
+     * preserveAspectRatio="meet", so the content side is the smaller of the
+     * element's dimensions and it is centred - the CTM already accounts for
+     * that letterboxing, the manual math below is the fallback */
+    get k() {
+      const m = this.svg.getScreenCTM();
+      if (m && (m.a || m.b)) return 1 / Math.hypot(m.a, m.b);
+      const r = this.svg.getBoundingClientRect();
+      return this.size / (Math.min(r.width, r.height) || this.size);
+    }
 
     pt(e) {
+      const m = this.svg.getScreenCTM();
+      if (m) {
+        const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+        return [p.x, p.y];
+      }
       const r = this.svg.getBoundingClientRect();
-      return [(e.clientX - r.left) / r.width * this.size, (e.clientY - r.top) / r.height * this.size];
+      const s = Math.min(r.width, r.height) || 1;
+      return [(e.clientX - r.left - (r.width - s) / 2) / s * this.size,
+        (e.clientY - r.top - (r.height - s) / 2) / s * this.size];
     }
 
     select(i) {

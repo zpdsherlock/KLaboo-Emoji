@@ -63,11 +63,11 @@ em { font-style: normal; color: var(--accent); }
 .slot-tab span { font-size: 12px; }
 .slot-tab small { color: var(--muted); font-size: 10px; }
 .slot-tab.bad small { color: var(--danger); }
-.canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 16px; position: relative; }
+.canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 16px; position: relative; container-type: size; }
 .canvas-wrap.drop { outline: 2px dashed var(--accent); outline-offset: -10px; }
-#canvas { width: min(100%, 100%); height: 100%; max-width: 100%; aspect-ratio: 1; box-shadow: 0 6px 30px #0008; border-radius: 4px; touch-action: none; background: #fff; }
-#canvas.t-select { cursor: default; } #canvas.t-pen, #canvas.t-line, #canvas.t-rect, #canvas.t-ellipse { cursor: crosshair; }
-#canvas.t-bucket { cursor: cell; } #canvas.t-eraser { cursor: not-allowed; }
+#canvas { width: min(100cqw, 100cqh); max-width: 100%; max-height: 100%; aspect-ratio: 1; box-shadow: 0 6px 30px #0008; border-radius: 4px; touch-action: none; background: #fff; }
+#canvas.t-select { cursor: default; } #canvas.t-pen, #canvas.t-line, #canvas.t-rect, #canvas.t-ellipse, #canvas.t-eraser { cursor: crosshair; }
+#canvas.t-bucket { cursor: cell; }
 .statusbar { height: 32px; display: flex; align-items: center; gap: 16px; padding: 0 14px; color: var(--muted);
   border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 .statusbar label { display: flex; gap: 4px; align-items: center; }
