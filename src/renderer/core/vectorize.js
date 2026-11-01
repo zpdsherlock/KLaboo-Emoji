@@ -123,13 +123,34 @@
     return rects;
   }
 
+  /* k-means leaves isolated single cells that each cost a rect on the
+   * device; a cell matching none of its 4 neighbours takes their most
+   * common label (possibly transparent). */
+  function denoise(grid, w, h) {
+    const src = Int16Array.from(grid);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const c = y * w + x;
+        if (src[c] < 0) continue;
+        const nb = [src[c - 1], src[c + 1], src[c - w], src[c + w]];
+        if (nb.includes(src[c])) continue;
+        let best = nb[0], bc = 0;
+        for (const a of nb) {
+          const cnt = nb.filter((b) => b === a).length;
+          if (cnt > bc) { bc = cnt; best = a; }
+        }
+        grid[c] = best;
+      }
+    }
+  }
+
   /**
    * @param {Uint8ClampedArray} rgba  gw*gh*4 sampled pixels
-   * @param {object} opt {colors, removeBg, bgTolerance, alphaThreshold}
+   * @param {object} opt {colors, removeBg, bgTolerance, alphaThreshold, denoise}
    * @returns {{gw, gh, layers:[{color, rects}]}}
    */
   function vectorize(rgba, gw, gh, opt) {
-    const o = Object.assign({ colors: 8, removeBg: false, bgTolerance: 24, alphaThreshold: 128 }, opt);
+    const o = Object.assign({ colors: 8, removeBg: false, bgTolerance: 24, alphaThreshold: 128, denoise: false }, opt);
     const n = gw * gh;
     const mask = new Uint8Array(n);
     for (let c = 0; c < n; c++) mask[c] = rgba[c * 4 + 3] >= o.alphaThreshold ? 1 : 0;
@@ -150,6 +171,7 @@
       }
       grid[c] = best;
     }
+    if (o.denoise) denoise(grid, gw, gh);
     const layers = cents.map((cc, k) => ({ color: hex(cc[0], cc[1], cc[2]), rects: mergeRects(grid, gw, gh, k) }))
       .filter((l) => l.rects.length)
       // big areas first so details paint on top of them
@@ -157,7 +179,7 @@
     return { gw, gh, layers };
   }
 
-  const KL_VEC = { vectorize, kmeans, mergeRects, hex };
+  const KL_VEC = { vectorize, kmeans, mergeRects, denoise, hex };
   if (typeof module !== 'undefined' && module.exports) module.exports = KL_VEC;
   else root.KL_VEC = KL_VEC;
 })(typeof self !== 'undefined' ? self : this);

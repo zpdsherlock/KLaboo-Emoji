@@ -16,6 +16,10 @@
     MANIFEST_FORMAT: 1,
     MAX_FILE_BYTES: 1024 * 1024,      // per expression svg
     MAX_PACK_BYTES: 4 * 1024 * 1024,  // six svgs together
+    // per-expression shape budget (path subpaths + basic shapes): the
+    // device rasterises each one; KLaboo-Server rejects above SHAPES_MAX
+    SHAPES_WARN: 1500,
+    SHAPES_MAX: 4000,
     // svg elements LVGL's svg decoder (LV_USE_SVG + ThorVG) renders;
     // text/image/filter/mask/clipPath/style are not supported on device
     SVG_TAGS: ['svg', 'g', 'defs', 'use', 'path', 'rect', 'circle',

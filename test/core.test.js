@@ -94,7 +94,7 @@ test('validate enforces server limits', () => {
   const big = sampleDoc();
   const rects = Array.from({ length: 40000 }, (_, i) => [i % 200, Math.floor(i / 200), 1, 1]);
   big.slots.dizzy.objects = [{ type: 'pixels', x: 0, y: 0, cell: 1.37, gw: 200, gh: 200,
-    layers: [{ color: '#123456', rects }] }];
+    layers: [{ color: '#123456', rects }], opacity: 0.5 }];   // translucent: no cover merge
   assert.ok(P.validate(big).errors.some((e) => e.includes('1MB')));
 });
 
@@ -119,4 +119,56 @@ test('normalizeDoc round-trips projects', () => {
   const back = S.normalizeDoc(JSON.parse(JSON.stringify(d)));
   assert.strictEqual(S.slotSVG(back.slots.smile, 320), S.slotSVG(d.slots.smile, 320));
   assert.throws(() => S.normalizeDoc({}));
+});
+
+function paint(gw, gh, layerRects) {
+  const out = new Int16Array(gw * gh).fill(-1);
+  layerRects.forEach((rects, k) => {
+    for (const [x, y, w, h] of rects) {
+      for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) out[yy * gw + xx] = k;
+    }
+  });
+  return out;
+}
+
+test('coverRects paints the same pixels with fewer rects', () => {
+  const gw = 40, gh = 40;
+  const grid = new Int16Array(gw * gh).fill(-1);
+  for (let y = 0; y < gh; y++) for (let x = 4; x < gw; x++) {
+    grid[y * gw + x] = (x * 7 + y * 13) % 11 === 0 ? 3 : ((x >> 3) + (y >> 3)) % 3;
+  }
+  const area = (k) => grid.filter((v) => v === k).length;
+  const labels = [0, 1, 2, 3].sort((a, b) => area(b) - area(a));
+  const layers = labels.map((k) => ({ color: '#000000', rects: V.mergeRects(grid, gw, gh, k) }));
+  const o = { type: 'pixels', x: 0, y: 0, cell: 1, gw, gh, layers, opacity: 1 };
+  const cover = S.coverRects(o);
+  assert.deepStrictEqual(paint(gw, gh, cover), paint(gw, gh, layers.map((l) => l.rects)));
+  const n = (ls) => ls.reduce((s, r) => s + r.length, 0);
+  assert.ok(n(cover) < n(layers.map((l) => l.rects)));
+  // translucent objects keep the exact (non-overlapping) cover
+  const svg = S.objectMarkup(Object.assign({}, o, { opacity: 0.5 }));
+  assert.strictEqual(P.shapeCount(svg), n(layers.map((l) => l.rects)));
+});
+
+test('vectorize denoise drops isolated cells', () => {
+  const w = 9, h = 9;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let c = 0; c < w * h; c++) rgba.set([255, 255, 255, 255], c * 4);
+  rgba.set([0, 0, 0, 255], (4 * w + 4) * 4);
+  assert.strictEqual(V.vectorize(rgba, w, h, { colors: 4 }).layers.length, 2);
+  const r = V.vectorize(rgba, w, h, { colors: 4, denoise: true });
+  assert.strictEqual(r.layers.length, 1);
+  assert.deepStrictEqual(r.layers[0].rects, [[0, 0, 9, 9]]);
+});
+
+test('validate flags expressions with too many shapes', () => {
+  const d = sampleDoc();
+  const rects = [];
+  for (let y = 0; y < 100; y += 2) for (let x = 0; x < 100; x += 2) rects.push([x, y, 1, 1]);
+  d.slots.panic.objects = [{ type: 'pixels', x: 0, y: 0, cell: 3, gw: 100, gh: 100,
+    layers: [{ color: '#123456', rects }], opacity: 1 }];
+  const v = P.validate(d);
+  assert.strictEqual(v.stats.panic.shapes, 2500);
+  assert.ok(v.warnings.some((e) => e.includes('panic')));
+  assert.ok(!v.errors.some((e) => e.includes('panic')));
 });

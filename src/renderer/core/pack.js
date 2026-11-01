@@ -34,7 +34,16 @@
     return { format: C.MANIFEST_FORMAT, name: doc.name, expressions };
   }
 
-  /* -> {errors:[], warnings:[], stats:{key:{bytes, elements}}, total} */
+  /* shapes the device rasterises: one per subpath (M) in path data plus
+   * every basic shape element - same count as KLaboo-Server */
+  function shapeCount(svg) {
+    let n = 0;
+    for (const m of svg.matchAll(/\sd="([^"]*)"/g)) n += Math.max(1, (m[1].match(/[Mm]/g) || []).length);
+    n += (svg.match(/<(rect|circle|ellipse|line|polyline|polygon)\b/g) || []).length;
+    return n;
+  }
+
+  /* -> {errors:[], warnings:[], stats:{key:{bytes, elements, cmds, shapes}}, total} */
   function validate(doc) {
     const errors = [], warnings = [], stats = {};
     let total = 0;
@@ -45,13 +54,18 @@
       const bytes = byteLen(svg);
       const elements = (svg.match(/<[a-zA-Z]/g) || []).length - 1;
       const cmds = (svg.match(/[MLQHVZmlqhvz]/g) || []).length;
-      stats[k] = { bytes, elements, cmds };
+      const shapes = shapeCount(svg);
+      stats[k] = { bytes, elements, cmds, shapes };
       total += bytes;
       const label = `${C.EXPR_LABELS[k]}(${k})`;
       if (S.slotIsEmpty(doc.slots[k])) errors.push(`${label} 还没有内容`);
       if (bytes > C.MAX_FILE_BYTES) errors.push(`${label} 超过 1MB 限制 (${(bytes / 1024).toFixed(0)} KB)`);
       for (const i of lintSVG(svg)) errors.push(`${label}: ${i}`);
-      if (cmds > 20000) warnings.push(`${label} 路径过于复杂 (${cmds} 段)，设备渲染可能卡顿，建议降低导入分辨率/颜色数`);
+      if (shapes > C.SHAPES_MAX) {
+        errors.push(`${label} 图形过于复杂 (${shapes} 个子图形)，超过服务器上限 ${C.SHAPES_MAX}，请降低导入分辨率/颜色数或开启"去除噪点"`);
+      } else if (shapes > C.SHAPES_WARN) {
+        warnings.push(`${label} 图形较多 (${shapes} 个子图形)，设备首次渲染会变慢，建议降低导入分辨率/颜色数或开启"去除噪点"`);
+      }
     }
     if (total > C.MAX_PACK_BYTES) errors.push(`表情总量超过 4MB 限制 (${(total / 1048576).toFixed(2)} MB)`);
     if (doc.size > C.MAX_FIT_W || doc.size > C.MAX_FIT_H) {
@@ -79,7 +93,7 @@
     return { data: out, validation: v };
   }
 
-  const KL_PACK = { lintSVG, buildFiles, manifest, validate, buildZip, byteLen };
+  const KL_PACK = { lintSVG, buildFiles, manifest, validate, buildZip, byteLen, shapeCount };
   if (node) module.exports = KL_PACK;
   else root.KL_PACK = KL_PACK;
 })(typeof self !== 'undefined' ? self : this);

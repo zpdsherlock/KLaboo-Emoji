@@ -190,7 +190,7 @@
       for (const k of C.EXPR_KEYS) {
         const s = v.stats[k];
         const bad = S.slotIsEmpty(st.doc.slots[k]) || s.bytes > C.MAX_FILE_BYTES;
-        h += `<tr><td class="${bad ? 'err' : 'ok'}">${bad ? '✕' : '✓'}</td><td>${C.EXPR_LABELS[k]}</td><td>${kb(s.bytes)}</td></tr>`;
+        h += `<tr><td class="${bad ? 'err' : 'ok'}">${bad ? '✕' : '✓'}</td><td>${C.EXPR_LABELS[k]}</td><td>${kb(s.bytes)}</td><td class="${s.shapes > C.SHAPES_WARN ? 'err' : ''}">${s.shapes} 图形</td></tr>`;
       }
       h += `<tr><td></td><td>合计</td><td class="${v.total > C.MAX_PACK_BYTES ? 'err' : ''}">${kb(v.total)} / 4 MB</td></tr></table>`;
       if (v.errors.length || v.warnings.length) {
@@ -469,6 +469,7 @@
       res: Number($('impRes').value), colors: Number($('impColors').value),
       removeBg: $('impRemoveBg').checked, bgTolerance: Number($('impTol').value),
       alphaThreshold: Number($('impAlpha').value), fit: Number($('impFit').value) / 100,
+      denoise: $('impDenoise').checked,
     };
     $('impResVal').textContent = `${p.res} 格`;
     $('impColorsVal').textContent = p.colors;
@@ -493,9 +494,11 @@
     imp.result = o;
     const svg = S.slotSVG({ background: null, objects: [o] }, size);
     $('impOutBox').innerHTML = `<img src="${svgURL(svg)}">`;
-    const rects = r.layers.reduce((s, l) => s + l.rects.length, 0);
+    const rects = PK.shapeCount(svg);
     const bytes = PK.byteLen(svg);
-    $('impStats').innerHTML = `网格 ${gw}×${gh} · ${r.layers.length} 种颜色 · ${rects} 个色块<br>SVG 大小约 <b>${(bytes / 1024).toFixed(1)} KB</b>`
+    $('impStats').innerHTML = `网格 ${gw}×${gh} · ${r.layers.length} 种颜色 · ${rects} 个色块`
+      + (rects > C.SHAPES_WARN ? ' <span style="color:var(--danger)">色块较多，设备渲染会变慢</span>' : '') + '<br>'
+      + `SVG 大小约 <b>${(bytes / 1024).toFixed(1)} KB</b>`
       + (bytes > C.MAX_FILE_BYTES ? ' <span style="color:var(--danger)">超过 1MB，请降低分辨率或颜色数</span>' : '');
   }
 
@@ -515,7 +518,7 @@
   }
 
   function bindImport() {
-    for (const id of ['impRes', 'impColors', 'impRemoveBg', 'impTol', 'impAlpha', 'impFit']) {
+    for (const id of ['impRes', 'impColors', 'impRemoveBg', 'impDenoise', 'impTol', 'impAlpha', 'impFit']) {
       $(id).addEventListener('input', () => {
         importParams();
         clearTimeout(imp.timer);

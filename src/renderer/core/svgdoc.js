@@ -209,11 +209,58 @@
     return a.join(' ');
   }
 
+  /* Device cost grows with the number of rects, so export a smaller cover:
+   * layers paint in order, so for layer k the cells of later layers are
+   * wildcards (painted over anyway) and k's rects may grow across them.
+   * Pixel-identical result, but only valid when the object is opaque. */
+  const coverCache = new WeakMap();
+  function coverRects(o) {
+    const w = o.gw, h = o.gh;
+    const sig = `${w}x${h}:` + o.layers.map((l) => l.rects.length).join(',');
+    const hit = coverCache.get(o.layers);
+    if (hit && hit.sig === sig) return hit.rects;
+    const grid = new Int16Array(w * h).fill(-1);
+    o.layers.forEach((l, k) => {
+      for (const [rx, ry, rw, rh] of l.rects) {
+        for (let y = Math.max(0, ry); y < Math.min(h, ry + rh); y++) {
+          for (let x = Math.max(0, rx); x < Math.min(w, rx + rw); x++) grid[y * w + x] = k;
+        }
+      }
+    });
+    const out = o.layers.map((l, k) => {
+      const used = new Uint8Array(w * h);
+      const free = (c) => grid[c] > k || (grid[c] === k && !used[c]);
+      const rects = [];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const c = y * w + x;
+          if (used[c] || grid[c] !== k) continue;
+          let rw = 1;
+          while (x + rw < w && free(c + rw)) rw++;
+          let rh = 1;
+          grow: while (y + rh < h) {
+            const row = (y + rh) * w + x;
+            for (let i = 0; i < rw; i++) if (!free(row + i)) break grow;
+            rh++;
+          }
+          for (let yy = y; yy < y + rh; yy++) {
+            for (let xx = x; xx < x + rw; xx++) if (grid[yy * w + xx] === k) used[yy * w + xx] = 1;
+          }
+          rects.push([x, y, rw, rh]);
+        }
+      }
+      return rects;
+    });
+    coverCache.set(o.layers, { sig, rects: out });
+    return out;
+  }
+
   function pixelsMarkup(o) {
     // slight overlap hides antialiasing seams between neighbour cells
     const ov = Math.min(0.5, o.cell * 0.08);
     const op = o.opacity == null ? 1 : o.opacity;
-    return o.layers.filter((l) => l.rects.length).map((l) => {
+    const cover = op >= 1 && o.gw && o.gh ? coverRects(o) : o.layers.map((l) => l.rects);
+    return o.layers.map((l, k) => ({ color: l.color, rects: cover[k] })).filter((l) => l.rects.length).map((l) => {
       let d = '';
       for (const [rx, ry, rw, rh] of l.rects) {
         d += `M${fmt(o.x + rx * o.cell)} ${fmt(o.y + ry * o.cell)}`
@@ -275,7 +322,7 @@
   }
 
   const KL_SVG = { uid, fmt, newDoc, newSlot, normalizeDoc, clone, simplify, smoothD,
-    bbox, translate, scale, hit, hitTest, objectMarkup, slotSVG, slotIsEmpty, isEmpty, distToSeg };
+    bbox, translate, scale, hit, hitTest, objectMarkup, slotSVG, slotIsEmpty, isEmpty, distToSeg, coverRects };
   if (typeof module !== 'undefined' && module.exports) module.exports = KL_SVG;
   else root.KL_SVG = KL_SVG;
 })(typeof self !== 'undefined' ? self : this);
