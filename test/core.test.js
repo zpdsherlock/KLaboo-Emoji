@@ -172,3 +172,55 @@ test('validate flags expressions with too many shapes', () => {
   assert.ok(v.warnings.some((e) => e.includes('panic')));
   assert.ok(!v.errors.some((e) => e.includes('panic')));
 });
+
+test('animated expression exports frames + manifest spec', async () => {
+  const d = sampleDoc();
+  const sl = d.slots.dizzy;
+  sl.fps = 6;
+  sl.anim = 'sway';
+  for (let i = 0; i < 3; i++) {
+    sl.frames.push({ background: null, objects: [{ id: S.uid(), type: 'ellipse',
+      cx: 160 + i * 20, cy: 160, rx: 140, ry: 140, fill: '#FFCC4D', stroke: null, width: 0, opacity: 1 }] });
+  }
+  d.slots.panic.anim = 'shake';
+  const v = P.validate(d);
+  assert.deepStrictEqual(v.errors, []);
+  assert.strictEqual(v.stats.dizzy.frames, 4);
+  const m = P.manifest(d);
+  assert.deepStrictEqual(m.expressions.dizzy, {
+    frames: ['dizzy_f0.svg', 'dizzy_f1.svg', 'dizzy_f2.svg', 'dizzy_f3.svg'],
+    fps: 6, anim: 'sway' });
+  assert.deepStrictEqual(m.expressions.panic, { file: 'panic.svg', anim: 'shake' });
+  assert.strictEqual(m.expressions.smile, 'smile.svg');
+  const { data } = await P.buildZip(JSZip, d);
+  const zip = await JSZip.loadAsync(data);
+  for (let i = 0; i < 4; i++) assert.ok(zip.file(`dizzy_f${i}.svg`));
+  assert.ok(zip.file('panic.svg'));
+  assert.ok(!zip.file('dizzy.svg'));
+});
+
+test('validate flags bad anim / fps and empty frames', () => {
+  const d = sampleDoc();
+  d.slots.smile.anim = 'explode';
+  assert.ok(P.validate(d).errors.some((e) => e.includes('动效')));
+  d.slots.smile.anim = 'none';
+  d.slots.smile.frames = [{ background: null, objects: [] }];
+  assert.ok(P.validate(d).errors.some((e) => e.includes('第2帧')));
+  d.slots.smile.frames[0].objects.push({ type: 'rect', x: 0, y: 0, w: 50, h: 50, fill: '#000' });
+  d.slots.smile.fps = 99;
+  assert.ok(P.validate(d).errors.some((e) => e.includes('帧率')));
+  d.slots.smile.fps = 8;
+  assert.deepStrictEqual(P.validate(d).errors, []);
+});
+
+test('normalizeDoc keeps anim/fps/frames with clamping', () => {
+  const d = sampleDoc();
+  d.slots.wink.anim = 'bogus';
+  d.slots.wink.fps = 99;
+  for (let i = 0; i < 10; i++) d.slots.wink.frames.push({ background: '#000', objects: [] });
+  const back = S.normalizeDoc(JSON.parse(JSON.stringify(d)));
+  assert.strictEqual(back.slots.wink.anim, 'none');
+  assert.strictEqual(back.slots.wink.fps, 25);
+  assert.strictEqual(S.frameCount(back.slots.wink), 8);
+  assert.strictEqual(S.frameAt(back.slots.wink, 2).background, '#000');
+});

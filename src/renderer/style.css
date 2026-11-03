@@ -126,5 +126,34 @@ em { font-style: normal; color: var(--accent); }
 .pv-cell.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .pv-cell img { width: 100%; aspect-ratio: 1; }
 .pv-cell div { color: var(--muted); font-size: 12px; }
+.pv-cell small { color: var(--accent); font-size: 11px; display: block; }
+
+/* frame strip in the "帧动画" section */
+.frame-strip { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 8px; }
+.frame-cell { position: relative; width: 52px; height: 52px; border: 1px solid var(--line);
+  border-radius: 6px; cursor: pointer; overflow: hidden; background: #000; }
+.frame-cell.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.frame-cell img { width: 100%; height: 100%; }
+.frame-cell span { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; color: var(--muted); font-size: 11px; }
+.frame-cell em { position: absolute; right: 2px; bottom: 0; font-size: 10px; font-style: normal;
+  color: var(--muted); }
+
+/* whole-image motion preview, mirrors face_ui.c pack anim transforms */
+@keyframes klBreathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes klShake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3px, 2px); }
+  50% { transform: translate(3px, -1px); }
+  75% { transform: translate(-2px, -2px); }
+}
+@keyframes klSway { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+@keyframes klPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.09); } }
+@keyframes klBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+.facebox img.anim-breathe { animation: klBreathe 2.2s ease-in-out infinite; }
+.facebox img.anim-shake { animation: klShake .28s linear infinite; }
+.facebox img.anim-sway { animation: klSway 1.6s ease-in-out infinite; }
+.facebox img.anim-pulse { animation: klPulse 1.4s ease-in-out infinite; }
+.facebox img.anim-bounce { animation: klBounce 1s ease-in-out infinite; }
 .toast { position: fixed; bottom: 46px; left: 50%; transform: translateX(-50%); background: #111c; border: 1px solid var(--line);
   padding: 8px 18px; border-radius: 20px; z-index: 20; max-width: 70vw; }

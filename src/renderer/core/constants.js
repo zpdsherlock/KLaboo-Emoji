@@ -16,6 +16,19 @@
     MANIFEST_FORMAT: 1,
     MAX_FILE_BYTES: 1024 * 1024,      // per expression svg
     MAX_PACK_BYTES: 4 * 1024 * 1024,  // six svgs together
+    // frame animation: mirrors KLaboo-Server MAX_FRAMES / fps bounds;
+    // the device's PSRAM bake budget favours few simple frames
+    MAX_FRAMES: 8,
+    FPS_DEFAULT: 8,
+    FPS_MIN: 1,
+    FPS_MAX: 25,
+    // whole-image motions the firmware plays on top of the (static or
+    // animated) image: face_ui.c pack_anim_t / server ANIM_NAMES
+    ANIM_NAMES: ['none', 'breathe', 'shake', 'sway', 'pulse', 'bounce'],
+    ANIM_LABELS: {
+      none: '无', breathe: '呼吸浮动', shake: '颤抖',
+      sway: '左右摇摆', pulse: '脉动缩放', bounce: '上下弹跳',
+    },
     // per-expression shape budget (path subpaths + basic shapes): the
     // device rasterises each one; KLaboo-Server rejects above SHAPES_MAX
     SHAPES_WARN: 1500,

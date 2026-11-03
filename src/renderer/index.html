@@ -77,6 +77,20 @@
         </div>
         <div class="row"><button id="btnClear" class="danger wide">清空当前表情</button></div>
       </section>
+      <section>
+        <h4>帧动画</h4>
+        <div class="frame-strip" id="frameStrip"></div>
+        <div class="row btns">
+          <button id="btnFrameDup" title="把当前帧复制为新的一帧">+复制帧</button>
+          <button id="btnFrameNew" title="添加空白帧">+空白帧</button>
+          <button id="btnFrameDel" class="danger" title="删除当前帧">-删帧</button>
+        </div>
+        <div class="row">
+          <label>动效 <select id="animSel"></select></label>
+          <label id="fpsRow">帧率 <input type="number" id="fpsInput" min="1" max="25" step="1" style="width:56px"> fps</label>
+        </div>
+        <p class="hint">帧按 fps 循环播放；动效作用于整图。设备内存有限，动画帧建议 ≤4 帧、画布 ≤320px。</p>
+      </section>
       <section class="layers-sec">
         <h4>图层 <span class="muted" id="layerCount"></span></h4>
         <ul class="layers" id="layerList"></ul>

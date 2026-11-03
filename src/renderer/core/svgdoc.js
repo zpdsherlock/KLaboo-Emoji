@@ -22,7 +22,36 @@
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
-  function newSlot() { return { background: null, objects: [] }; }
+  /* A slot is frame 0 of an expression: its own {background, objects}
+   * plus optional extra frames in .frames, a whole-image motion .anim
+   * and .fps for the frame cycle. See KLaboo-Server emojis.py for the
+   * matching manifest fields. */
+  function newSlot() {
+    return { background: null, objects: [],
+      anim: 'none', fps: C.FPS_DEFAULT, frames: [] };
+  }
+
+  function normObjects(list) {
+    return Array.isArray(list)
+      ? list.map((o) => Object.assign({}, o, { id: o.id || uid() })) : [];
+  }
+
+  function normalizeSlot(s) {
+    const out = newSlot();
+    if (s && typeof s === 'object') {
+      out.background = s.background || null;
+      out.objects = normObjects(s.objects);
+      out.anim = C.ANIM_NAMES.includes(s.anim) ? s.anim : 'none';
+      const fps = Math.round(Number(s.fps));
+      out.fps = Number.isFinite(fps)
+        ? Math.min(C.FPS_MAX, Math.max(C.FPS_MIN, fps)) : C.FPS_DEFAULT;
+      out.frames = (Array.isArray(s.frames) ? s.frames : [])
+        .slice(0, C.MAX_FRAMES - 1)
+        .map((f) => ({ background: (f && f.background) || null,
+          objects: normObjects(f && f.objects) }));
+    }
+    return out;
+  }
 
   function newDoc(name, size) {
     const slots = {};
@@ -34,15 +63,18 @@
   function normalizeDoc(d) {
     if (!d || typeof d !== 'object' || !d.slots) throw new Error('不是有效的表情工程文件');
     const out = newDoc(d.name, Number(d.size) || C.DEFAULT_SIZE);
-    for (const k of C.EXPR_KEYS) {
-      const s = d.slots[k];
-      if (s) {
-        out.slots[k].background = s.background || null;
-        out.slots[k].objects = Array.isArray(s.objects)
-          ? s.objects.map((o) => Object.assign({}, o, { id: o.id || uid() })) : [];
-      }
-    }
+    for (const k of C.EXPR_KEYS) out.slots[k] = normalizeSlot(d.slots[k]);
     return out;
+  }
+
+  /* Frame 0 is the slot's own content; .frames[i-1] holds frame i. */
+  function frameCount(slot) {
+    return 1 + (slot && Array.isArray(slot.frames) ? slot.frames.length : 0);
+  }
+
+  function frameAt(slot, i) {
+    if (!slot || i <= 0) return slot;
+    return (slot.frames && slot.frames[i - 1]) || slot;
   }
 
   function clone(o) {
@@ -321,7 +353,8 @@
     return !slot.background && !slot.objects.some((o) => !isEmpty(o));
   }
 
-  const KL_SVG = { uid, fmt, newDoc, newSlot, normalizeDoc, clone, simplify, smoothD,
+  const KL_SVG = { uid, fmt, newDoc, newSlot, normalizeSlot, normalizeDoc,
+    frameCount, frameAt, clone, simplify, smoothD,
     bbox, translate, scale, hit, hitTest, objectMarkup, slotSVG, slotIsEmpty, isEmpty, distToSeg, coverRects };
   if (typeof module !== 'undefined' && module.exports) module.exports = KL_SVG;
   else root.KL_SVG = KL_SVG;

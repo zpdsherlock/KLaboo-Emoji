@@ -32,16 +32,25 @@
   const st = {
     doc: S.newDoc('我的表情', C.DEFAULT_SIZE),
     key: C.EXPR_KEYS[0],
+    frame: 0,               // frame index being edited (0 = slot itself)
     tool: 'pen',
     filePath: null,
     dirty: false,
     hist: {},
     pvKey: C.EXPR_KEYS[0],
+    pvFrame: 0,
   };
   const resetHistory = () => { for (const k of C.EXPR_KEYS) st.hist[k] = { undo: [], redo: [] }; };
   resetHistory();
 
+  /* slot() is the whole expression (content = frame 0, extra frames in
+   * .frames); frameSlot() is the frame the canvas is editing. History
+   * snapshots slot() so undo covers frame edits and frame add/remove. */
   const slot = () => st.doc.slots[st.key];
+  const frameSlot = () => S.frameAt(slot(), st.frame);
+  const clampFrame = () => {
+    st.frame = Math.max(0, Math.min(st.frame, S.frameCount(slot()) - 1));
+  };
 
   function style() {
     return {
@@ -69,6 +78,7 @@
     if (!from.length) return;
     to.push(JSON.stringify(slot()));
     st.doc.slots[st.key] = JSON.parse(from.pop());
+    clampFrame();
     ed.sel = -1;
     setDirty(true);
     refresh();
@@ -85,7 +95,7 @@
 
   // ---- editor ----
   const ed = new self.KL_Editor($('canvas'), {
-    getSlot: slot,
+    getSlot: frameSlot,
     getSize: () => st.doc.size,
     getTool: () => st.tool,
     getStyle: style,
@@ -138,6 +148,15 @@
 
   function switchSlot(k) {
     st.key = k;
+    st.frame = 0;
+    ed.sel = -1;
+    refresh();
+    syncSelection();
+  }
+
+  function switchFrame(f) {
+    st.frame = f;
+    clampFrame();
     ed.sel = -1;
     refresh();
     syncSelection();
@@ -150,10 +169,12 @@
       const k = el.dataset.k, sl = st.doc.slots[k];
       el.classList.toggle('active', k === st.key);
       const empty = S.slotIsEmpty(sl);
+      const n = S.frameCount(sl);
       el.classList.toggle('bad', empty);
       el.querySelector('.thumb').innerHTML = empty ? '<div class="empty"></div>'
         : `<img class="chk" src="${svgURL(S.slotSVG(sl, st.doc.size))}">`;
-      el.querySelector('small').textContent = empty ? `${k} · 空` : k;
+      el.querySelector('small').textContent = empty ? `${k} · 空`
+        : (n > 1 ? `${k} · ${n}帧` : k);
     }
     $('curLabel').textContent = `${C.EXPR_LABELS[st.key]} · ${st.key}`;
     $('copyTarget').innerHTML = ['<option value="*">复制到其它全部表情</option>']
@@ -161,7 +182,7 @@
   }
 
   function refreshLayers() {
-    const objs = slot().objects;
+    const objs = frameSlot().objects;
     $('layerCount').textContent = objs.length ? `(${objs.length})` : '';
     if (!objs.length) { $('layerList').innerHTML = '<li class="none">暂无图层，用画笔开始绘制或导入图片</li>'; return; }
     let h = '';
@@ -175,9 +196,59 @@
   }
 
   function refreshSlotPanel() {
-    const bg = slot().background;
+    const bg = frameSlot().background;
     $('bgOn').checked = !!bg;
     if (bg) $('bgColor').value = bg;
+  }
+
+  function refreshFrames() {
+    const n = S.frameCount(slot());
+    $('frameStrip').innerHTML = Array.from({ length: n }, (_, i) => {
+      const f = S.frameAt(slot(), i);
+      const src = S.slotIsEmpty(f) ? '' : svgURL(S.slotSVG(f, st.doc.size));
+      return `<div class="frame-cell${i === st.frame ? ' active' : ''}" data-f="${i}" title="第 ${i + 1} 帧">`
+        + `${src ? `<img src="${src}">` : '<span>空</span>'}<em>${i + 1}</em></div>`;
+    }).join('');
+    $('btnFrameDup').disabled = n >= C.MAX_FRAMES;
+    $('btnFrameNew').disabled = n >= C.MAX_FRAMES;
+    $('btnFrameDel').disabled = n === 1 && S.slotIsEmpty(slot());
+    $('animSel').value = slot().anim || 'none';
+    $('fpsInput').value = slot().fps || C.FPS_DEFAULT;
+    $('fpsRow').style.display = n > 1 ? '' : 'none';
+  }
+
+  function frameAdd(dup) {
+    if (S.frameCount(slot()) >= C.MAX_FRAMES) return;
+    beforeChange();
+    const src = JSON.stringify({ background: frameSlot().background, objects: frameSlot().objects });
+    const f = dup
+      ? JSON.parse(src)
+      : { background: null, objects: [] };
+    f.objects.forEach((o) => { o.id = S.uid(); });
+    slot().frames.splice(st.frame, 0, f);   /* insert after current frame */
+    st.frame++;
+    ed.sel = -1;
+    afterChange();
+    toast(`已添加第 ${st.frame + 1} 帧`);
+  }
+
+  function frameDel() {
+    const sl = slot(), n = S.frameCount(sl);
+    beforeChange();
+    if (st.frame > 0) {
+      sl.frames.splice(st.frame - 1, 1);
+      st.frame--;
+    } else if (n > 1) {
+      /* deleting frame 0 promotes the next frame into the slot */
+      const f = sl.frames.shift();
+      sl.background = f.background;
+      sl.objects = f.objects;
+    } else {
+      st.doc.slots[st.key] = S.newSlot();
+    }
+    clampFrame();
+    ed.sel = -1;
+    afterChange();
   }
 
   let checkTimer = 0;
@@ -189,8 +260,10 @@
       let h = '<table>';
       for (const k of C.EXPR_KEYS) {
         const s = v.stats[k];
-        const bad = S.slotIsEmpty(st.doc.slots[k]) || s.bytes > C.MAX_FILE_BYTES;
-        h += `<tr><td class="${bad ? 'err' : 'ok'}">${bad ? '✕' : '✓'}</td><td>${C.EXPR_LABELS[k]}</td><td>${kb(s.bytes)}</td><td class="${s.shapes > C.SHAPES_WARN ? 'err' : ''}">${s.shapes} 图形</td></tr>`;
+        const bad = S.slotIsEmpty(st.doc.slots[k]) || s.maxBytes > C.MAX_FILE_BYTES;
+        h += `<tr><td class="${bad ? 'err' : 'ok'}">${bad ? '✕' : '✓'}</td><td>${C.EXPR_LABELS[k]}</td>`
+          + `<td>${s.frames > 1 ? `${s.frames}帧 · ` : ''}${kb(s.bytes)}</td>`
+          + `<td class="${s.shapes > C.SHAPES_WARN ? 'err' : ''}">${s.shapes} 图形</td></tr>`;
       }
       h += `<tr><td></td><td>合计</td><td class="${v.total > C.MAX_PACK_BYTES ? 'err' : ''}">${kb(v.total)} / 4 MB</td></tr></table>`;
       if (v.errors.length || v.warnings.length) {
@@ -206,6 +279,7 @@
     refreshTabs();
     refreshLayers();
     refreshSlotPanel();
+    refreshFrames();
     refreshChecks();
     renderDevice($('miniDevice'), st.key, 'night', 0.5);
     $('btnUndo').disabled = !st.hist[st.key].undo.length;
@@ -266,12 +340,30 @@
       $(id).addEventListener('change', () => { applyStyleToSelection(); styleTxn = false; refresh(); });
     }
     $('fillColor').addEventListener('input', () => { if (!$('fillOn').checked && !ed.selected()) $('fillOn').checked = true; });
-    $('bgOn').addEventListener('change', () => { beforeChange(); slot().background = $('bgOn').checked ? $('bgColor').value : null; afterChange(); });
+    $('bgOn').addEventListener('change', () => { beforeChange(); frameSlot().background = $('bgOn').checked ? $('bgColor').value : null; afterChange(); });
     $('bgColor').addEventListener('input', () => {
       if (!$('bgOn').checked) $('bgOn').checked = true;
       if (!styleTxn) { beforeChange(); styleTxn = true; }
-      slot().background = $('bgColor').value;
+      frameSlot().background = $('bgColor').value;
       ed.render();
+    });
+    $('frameStrip').addEventListener('click', (e) => {
+      const c = e.target.closest('.frame-cell');
+      if (c) switchFrame(Number(c.dataset.f));
+    });
+    $('btnFrameDup').onclick = () => frameAdd(true);
+    $('btnFrameNew').onclick = () => frameAdd(false);
+    $('btnFrameDel').onclick = async () => {
+      if (S.slotIsEmpty(frameSlot()) || await ask('删除帧', `确定删除「${C.EXPR_LABELS[st.key]}」第 ${st.frame + 1} 帧吗？（可撤销）`)) frameDel();
+    };
+    $('animSel').innerHTML = C.ANIM_NAMES.map((a) => `<option value="${a}">${C.ANIM_LABELS[a]}</option>`).join('');
+    $('animSel').addEventListener('change', () => { beforeChange(); slot().anim = $('animSel').value; afterChange(); });
+    $('fpsInput').addEventListener('change', () => {
+      const v = Math.round(Number($('fpsInput').value));
+      if (!Number.isFinite(v)) return;
+      beforeChange();
+      slot().fps = Math.min(C.FPS_MAX, Math.max(C.FPS_MIN, v));
+      afterChange();
     });
     $('bgColor').addEventListener('change', () => { styleTxn = false; afterChange(); });
     $('showGuides').addEventListener('change', () => ed.drawGuides());
@@ -365,7 +457,7 @@
     for (const k of keys) {
       st.key = k;
       beforeChange();
-      st.doc.slots[k] = { background: null, objects: T.build(id, k, st.doc.size) };
+      st.doc.slots[k] = Object.assign(S.newSlot(), { objects: T.build(id, k, st.doc.size) });
     }
     st.key = cur;
     ed.sel = -1;
@@ -384,6 +476,7 @@
       beforeChange();
       const c = JSON.parse(src);
       c.objects.forEach((o) => { o.id = S.uid(); });
+      (c.frames || []).forEach((f) => f.objects.forEach((o) => { o.id = S.uid(); }));
       st.doc.slots[k] = c;
     }
     st.key = cur;
@@ -398,7 +491,12 @@
     if (hasContent && await ask('调整画布', `是否将现有内容按比例从 ${o}px 缩放到 ${n}px？\n选择“取消”则保持原尺寸、仅扩展/裁切画布。`)) {
       const s = n / o;
       for (const k of C.EXPR_KEYS) {
-        for (const ob of st.doc.slots[k].objects) { S.scale(ob, s, s, 0, 0); if (ob.width) ob.width *= s; }
+        for (let i = 0; i < S.frameCount(st.doc.slots[k]); i++) {
+          for (const ob of S.frameAt(st.doc.slots[k], i).objects) {
+            S.scale(ob, s, s, 0, 0);
+            if (ob.width) ob.width *= s;
+          }
+        }
       }
     }
     st.doc.size = n;
@@ -531,12 +629,16 @@
       const o = imp.result;
       if (!o || !o.layers.length) { info('导入失败', '生成结果为空，请调整透明阈值或关闭去除背景。'); return; }
       beforeChange();
-      if ($('impMode').value === 'replace') st.doc.slots[st.key] = { background: null, objects: [o] };
-      else slot().objects.push(o);
+      if ($('impMode').value === 'replace') {
+        frameSlot().background = null;
+        frameSlot().objects = [o];
+      } else {
+        frameSlot().objects.push(o);
+      }
       imp.result = null;
       $('importModal').hidden = true;
       setTool('select');
-      ed.sel = slot().objects.length - 1;
+      ed.sel = frameSlot().objects.length - 1;
       afterChange();
       syncSelection();
       toast(`已导入到「${C.EXPR_LABELS[st.key]}」，可拖动/缩放调整位置`);
@@ -545,32 +647,52 @@
   }
 
   // ---- preview ----
-  function renderDevice(host, key, theme, scale) {
+  const frameImg = (key, f) => {
+    const fr = S.frameAt(st.doc.slots[key], f);
+    return S.slotIsEmpty(fr) ? '' : svgURL(S.slotSVG(fr, st.doc.size));
+  };
+
+  function renderDevice(host, key, theme, scale, frame) {
     const sl = st.doc.slots[key], size = st.doc.size;
     const empty = S.slotIsEmpty(sl);
+    const anim = sl.anim || 'none';
+    const src = frameImg(key, frame || 0);
     const img = empty ? '<div class="placeholder">（未绘制）</div>'
-      : `<img src="${svgURL(S.slotSVG(sl, size))}" style="width:${size}px;height:${size}px;left:${C.FACE_CX - size / 2}px;top:${C.FACE_CY - size / 2}px">`;
+      : `<img class="anim-${anim}" src="${src}" style="width:${size}px;height:${size}px;left:${C.FACE_CX - size / 2}px;top:${C.FACE_CY - size / 2}px">`;
     const dev = `<div class="device ${theme}" style="transform:scale(${scale});transform-origin:top center;margin-bottom:${-C.SCREEN_H * (1 - scale)}px">`
       + `<div class="batt">85%</div><div class="name">${C.EXPR_CAPTIONS[key]}</div>`
       + `<div class="facebox">${img}</div><div class="hint">Shake / Turn / Tap my face</div></div>`;
     host.innerHTML = dev;
   }
 
-  let pvTimer = 0;
+  let pvTimer = 0, pvFrameTimer = 0;
   function renderPreview() {
     const theme = $('pvTheme').value;
-    renderDevice($('pvDevice'), st.pvKey, theme, 1);
+    renderDevice($('pvDevice'), st.pvKey, theme, 1, st.pvFrame);
     $('pvName').textContent = `${st.doc.name} · ${C.EXPR_LABELS[st.pvKey]}`;
     $('pvGrid').innerHTML = C.EXPR_KEYS.map((k) => {
-      const sl = st.doc.slots[k];
-      const src = S.slotIsEmpty(sl) ? '' : svgURL(S.slotSVG(sl, st.doc.size));
+      const src = frameImg(k, 0);
+      const n = S.frameCount(st.doc.slots[k]);
+      const anim = st.doc.slots[k].anim || 'none';
       return `<div class="pv-cell ${theme === 'day' ? 'day' : ''} ${k === st.pvKey ? 'active' : ''}" data-k="${k}">`
-        + `${src ? `<img src="${src}">` : '<img alt="">'}<div>${C.EXPR_LABELS[k]} · ${C.EXPR_CAPTIONS[k]}</div></div>`;
+        + `${src ? `<img src="${src}">` : '<img alt="">'}<div>${C.EXPR_LABELS[k]} · ${C.EXPR_CAPTIONS[k]}</div>`
+        + `${n > 1 || anim !== 'none' ? `<small>${n > 1 ? `${n}帧` : ''}${n > 1 && anim !== 'none' ? '+' : ''}${anim !== 'none' ? C.ANIM_LABELS[anim] : ''}</small>` : ''}</div>`;
     }).join('');
+    /* frame animation: swap the img src at the slot's fps */
+    clearInterval(pvFrameTimer);
+    const sl = st.doc.slots[st.pvKey], n = S.frameCount(sl);
+    if (n > 1) {
+      pvFrameTimer = setInterval(() => {
+        st.pvFrame = (st.pvFrame + 1) % n;
+        const img = $('pvDevice').querySelector('.facebox img');
+        if (img) img.src = frameImg(st.pvKey, st.pvFrame);
+      }, Math.max(40, Math.round(1000 / (sl.fps || C.FPS_DEFAULT))));
+    }
   }
 
   function openPreview() {
     st.pvKey = st.key;
+    st.pvFrame = st.frame;
     $('previewModal').hidden = false;
     renderPreview();
     restartAuto();
@@ -582,18 +704,24 @@
     pvTimer = setInterval(() => {
       const i = C.EXPR_KEYS.indexOf(st.pvKey);
       st.pvKey = C.EXPR_KEYS[(i + 1) % C.EXPR_KEYS.length];
+      st.pvFrame = 0;
       renderPreview();
     }, 1600);
   }
 
   function bindPreview() {
-    $('pvClose').onclick = () => { $('previewModal').hidden = true; clearInterval(pvTimer); };
+    $('pvClose').onclick = () => {
+      $('previewModal').hidden = true;
+      clearInterval(pvTimer);
+      clearInterval(pvFrameTimer);
+    };
     $('pvAuto').onchange = restartAuto;
     $('pvTheme').onchange = renderPreview;
     $('pvGrid').addEventListener('click', (e) => {
       const c = e.target.closest('.pv-cell');
       if (!c) return;
       st.pvKey = c.dataset.k;
+      st.pvFrame = 0;
       $('pvAuto').checked = false;
       restartAuto();
       renderPreview();
@@ -636,7 +764,9 @@
     }
     if (v.warnings.length && !(await ask('导出提示', v.warnings.join('\n') + '\n\n仍然导出吗？'))) return;
     try {
-      const preview = await svgToPng(v.files.smile, 256);
+      /* files are keyed by full name: 'smile.svg' or 'smile_f0.svg' */
+      const smileFile = Object.keys(v.files).find((f) => f.startsWith('smile'));
+      const preview = await svgToPng(v.files[smileFile], 256);
       const { data } = await PK.buildZip(self.JSZip, st.doc, { 'preview.png': preview });
       const p = await saveAs(`${safeName()}.zip`, [{ name: '表情包 zip', extensions: ['zip'] }], data);
       if (p) toast(`已导出 ${(data.length / 1024).toFixed(1)} KB → ${p}`);
@@ -672,6 +802,7 @@
     st.doc = doc;
     st.filePath = filePath || null;
     st.key = C.EXPR_KEYS[0];
+    st.frame = 0;
     ed.sel = -1;
     resetHistory();
     $('packName').value = doc.name;
@@ -704,7 +835,7 @@
   // ---- keyboard / menu ----
   function onKey(e) {
     if (!$('importModal').hidden || !$('previewModal').hidden || !$('msgModal').hidden) {
-      if (e.key === 'Escape') { $('importModal').hidden = true; $('previewModal').hidden = true; clearInterval(pvTimer); }
+      if (e.key === 'Escape') { $('importModal').hidden = true; $('previewModal').hidden = true; clearInterval(pvTimer); clearInterval(pvFrameTimer); }
       return;
     }
     if (e.target.matches('input[type=text], select')) return;
